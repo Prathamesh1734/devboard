@@ -1,0 +1,52 @@
+// This will handle registering and logging in users, and sending the JWT back in a secure cookie.
+const User = require("../models/User");
+const ErrorResponse = require("../utils/errorResponse");
+const asyncHandler = require("../utils/asyncHandler");
+
+// Helper function to get token from model, create cookie and send response
+const sendTokenResponse = (user, statusCode, res) => {
+  const token = user.getSignedJwtToken();
+
+  const options = {
+    expires: new Date(
+      Date.now() + process.env.JWT_COOKIE_EXPIRE * 24 * 60 * 60 * 1000,
+    ),
+    httpOnly: true, // Cookie cannot be accessed via client-side scripts
+  };
+
+  if (process.env.NODE_ENV === "production") {
+    options.secure = true;
+  }
+
+  res
+    .status(statusCode)
+    .cookie("token", token, options)
+    .json({ success: true, token });
+};
+
+// @desc    Register user
+// @route   POST /api/auth/register
+exports.register = asyncHandler(async (req, res, next) => {
+  const { name, email, password, role } = req.body;
+  const user = await User.create({ name, email, password, role });
+  sendTokenResponse(user, 200, res);
+});
+
+// @desc    Login user
+// @route   POST /api/auth/login
+exports.login = asyncHandler(async (req, res, next) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return next(new ErrorResponse("please provide email and password", 400));
+  }
+
+  // Check for user (we use +password because select: false was set in the model)
+  const user = await User.findOne({ email }).select("+password");
+
+  if (!user || !(await user.matchPassword(password))) {
+    return next(new ErrorResponse("invalid credentials", 401));
+  }
+
+  sendTokenResponse(user, 200, res);
+});
